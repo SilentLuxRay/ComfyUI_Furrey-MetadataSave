@@ -23,7 +23,7 @@ Designed to save metadata readable by Automatic1111/CivitAI and to simplify the 
 ### 🖼️ Workflows & Examples
 1. Basic Metadata Save
 Simple usage to save your images with embedded metadata.
-![alt text](URL_DEL_TUO_SCREENSHOT_1)
+![alt text](Screen1.png)
 2. All-in-One Generator
 Generate high-quality SDXL images without the clutter of empty latents or separate VAE decodes.
 ![alt text](URL_DEL_TUO_SCREENSHOT_2)
