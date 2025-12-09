@@ -23,13 +23,13 @@ Designed to save metadata readable by Automatic1111/CivitAI and to simplify the 
 ### 🖼️ Workflows & Examples
 1. Basic Metadata Save
 Simple usage to save your images with embedded metadata.
-![alt text](Screen1.png)
+![Metadata Save](exemple/Screen1.png)
 2. All-in-One Generator
 Generate high-quality SDXL images without the clutter of empty latents or separate VAE decodes.
-![alt text](URL_DEL_TUO_SCREENSHOT_2)
+![Metadata Save](exemple/Screen2.png)
 3. Hires Fix & Refiner
 How to connect the Refiner node for high-resolution upscaling.
-![alt text](URL_DEL_TUO_SCREENSHOT_3)
+![Metadata Save](exemple/Screen3.png)
 
 
 Created by Furrey for the ComfyUI community.
