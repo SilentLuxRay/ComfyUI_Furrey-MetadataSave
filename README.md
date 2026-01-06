@@ -1,3 +1,11 @@
+# Update Furrey SuperTools v2.0
+1. Added Furrey Save Image Plus node.
+2. Full Civitai/A1111 metadata compatibility.
+3. Added SHA256 (AutoV2) hashing for Checkpoints and LoRAs with caching.
+4. Automatic LoRA detection for Furrey Super Prompt Mixer.
+5. Clean naming (removes subfolder paths/extensions from metadata).
+6. Multiple save modes including Preview Only and No Metadata.
+
 # 🦊 Furrey-MetadataSave for ComfyUI
 
 A suite of simple, intuitive, and "All-in-One" nodes for ComfyUI. 
