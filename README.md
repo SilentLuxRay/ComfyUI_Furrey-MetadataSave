@@ -1,3 +1,5 @@
+# Update Furrey SuperTools v3.0
+"Ora supporta il salvataggio in percorsi personalizzati, hashing SHA256 automatico per Checkpoint/LoRA (compatibile con Civitai) e integrazione totale con il caricatore di Pythongosssss."
 # Update Furrey SuperTools v2.0
 1. Added Furrey Save Image Plus node.
 2. Full Civitai/A1111 metadata compatibility.

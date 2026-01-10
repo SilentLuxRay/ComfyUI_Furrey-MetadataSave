@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import hashlib
 import re
+import random
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 import folder_paths
@@ -31,16 +32,28 @@ def get_sha256_hash(file_path):
         return "Unknown"
 
 def clean_name(path):
-    if not path or path == "None": return None
+    if not path or path == "None": return "Unknown"
     return os.path.splitext(os.path.basename(path))[0]
 
 # ==========================================
 # LOGICA DI SALVATAGGIO ECO-SISTEMA FURREY PRO
 # ==========================================
-def save_furrey_logic(images, filename_prefix, prompt_data, extra_pnginfo, pos_text, neg_text, steps, sampler, scheduler, cfg, seed, model_name, denoise, mode):
-    output_dir = folder_paths.get_output_directory()
+def save_furrey_logic(images, filename_prefix, prompt_data, extra_pnginfo, pos_text, neg_text, steps, sampler, scheduler, cfg, seed, model_name_input, denoise, mode, custom_save_path=""):
     
-    detected_checkpoint_clean = "Unknown"
+    # 1. GESTIONE PERCORSO
+    if custom_save_path.strip() != "":
+        if os.path.isabs(custom_save_path):
+            base_output = custom_save_path
+        else:
+            base_output = os.path.join(folder_paths.get_output_directory(), custom_save_path)
+    else:
+        base_output = folder_paths.get_output_directory()
+
+    if not os.path.exists(base_output):
+        os.makedirs(base_output, exist_ok=True)
+
+    # 2. DETECTIVE AVANZATO (Modello e LoRA)
+    detected_model_name = "Unknown"
     model_hash_v2 = "Unknown"
     hashes_dict = {}
     lora_hashes_list = []
@@ -51,53 +64,37 @@ def save_furrey_logic(images, filename_prefix, prompt_data, extra_pnginfo, pos_t
             class_type = node.get('class_type', '')
             inputs = node.get('inputs', {})
             
-            # 1. RILEVAMENTO CHECKPOINT
-            if class_type in ['CheckpointLoaderSimple', 'CheckpointLoader']:
-                ckpt_path_rel = inputs.get('ckpt_name', '')
-                if ckpt_path_rel:
-                    detected_checkpoint_clean = clean_name(ckpt_path_rel)
-                    full_path = folder_paths.get_full_path("checkpoints", ckpt_path_rel)
+            # --- RILEVAMENTO CHECKPOINT (Compatibile con Pythongosssss e altri) ---
+            # Cerchiamo qualsiasi nodo che abbia un input chiamato 'ckpt_name' o che sia un caricatore noto
+            ckpt_name = inputs.get('ckpt_name') or inputs.get('checkpoint_name')
+            
+            if ckpt_name and isinstance(ckpt_name, str):
+                # Se abbiamo trovato un nome di file safetensors
+                detected_model_name = clean_name(ckpt_name)
+                full_path = folder_paths.get_full_path("checkpoints", ckpt_name)
+                if full_path:
                     model_hash_v2 = get_sha256_hash(full_path)
                     hashes_dict["model"] = model_hash_v2
             
-            # 2. RILEVAMENTO LORA (Nodi Standard)
-            if class_type in ['LoraLoader', 'LoraLoaderModelOnly']:
-                lora_path_rel = inputs.get('lora_name', '')
-                if lora_path_rel:
-                    l_name = clean_name(lora_path_rel)
-                    l_path = folder_paths.get_full_path("loras", lora_path_rel)
-                    l_hash = get_sha256_hash(l_path)
-                    hashes_dict[f"lora:{l_name}"] = l_hash
-                    lora_hashes_list.append(f"{l_name}: {l_hash}")
+            # --- RILEVAMENTO LORA ---
+            if class_type in ['LoraLoader', 'LoraLoaderModelOnly', 'FurreySuperPrompt'] or 'lora' in class_type.lower():
+                for key in inputs:
+                    if 'lora' in key and 'name' in key:
+                        lora_val = inputs[key]
+                        if lora_val and lora_val != "None" and isinstance(lora_val, str):
+                            l_name = clean_name(lora_val)
+                            l_path = folder_paths.get_full_path("loras", lora_val)
+                            if l_path:
+                                l_hash = get_sha256_hash(l_path)
+                                hashes_dict[f"lora:{l_name}"] = l_hash
+                                if f"{l_name}: {l_hash}" not in lora_hashes_list:
+                                    lora_hashes_list.append(f"{l_name}: {l_hash}")
 
-            # 3. RILEVAMENTO LORA (Tuo Nodo SuperPrompt Mixer)
-            if class_type == 'FurreySuperPrompt':
-                for i in range(1, 4):
-                    l_name_raw = inputs.get(f'lora_{i}_name', 'None')
-                    if l_name_raw and l_name_raw != "None":
-                        l_name = clean_name(l_name_raw)
-                        l_path = folder_paths.get_full_path("loras", l_name_raw)
-                        l_hash = get_sha256_hash(l_path)
-                        hashes_dict[f"lora:{l_name}"] = l_hash
-                        lora_hashes_list.append(f"{l_name}: {l_hash}")
+    # Priorità nome modello: Input manuale > Detective
+    final_model_name = clean_name(model_name_input) if (model_name_input and model_name_input.strip() != "" and model_name_input != "model.safetensors") else detected_model_name
 
-        # 4. LORA NEL TESTO (Regex per <lora:name:1.0>)
-        all_text = f"{pos_text} {neg_text}"
-        found_loras = re.findall(r"<lora:([^:>]+)(?::[^>]+)?>", all_text)
-        available_loras = folder_paths.get_filename_list("loras")
-        for l_raw in found_loras:
-            l_name_with_ext = l_raw if l_raw.endswith(".safetensors") else f"{l_raw}.safetensors"
-            if l_name_with_ext in available_loras:
-                l_name = clean_name(l_name_with_ext)
-                if f"lora:{l_name}" not in hashes_dict:
-                    l_path = folder_paths.get_full_path("loras", l_name_with_ext)
-                    l_hash = get_sha256_hash(l_path)
-                    hashes_dict[f"lora:{l_name}"] = l_hash
-                    lora_hashes_list.append(f"{l_name}: {l_hash}")
-
-    final_model_name = clean_name(model_name) if (model_name != "" and model_name != "model.safetensors") else detected_checkpoint_clean
-
-    full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, output_dir, images[0].shape[2], images[0].shape[1])
+    # 3. SALVATAGGIO
+    full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(filename_prefix, base_output, images[0].shape[2], images[0].shape[1])
     results = list()
     
     for image in images:
@@ -124,16 +121,15 @@ def save_furrey_logic(images, filename_prefix, prompt_data, extra_pnginfo, pos_t
             
             metadata.add_text("parameters", a1111_str)
 
-        if mode == "No Metadata": metadata = None
-
         file = f"{filename}_{counter:05}_.png"
-        img.save(os.path.join(full_output_folder, file), pnginfo=metadata, compress_level=4)
+        img.save(os.path.join(full_output_folder, file), pnginfo=metadata if mode != "No Metadata" else None, compress_level=4)
         results.append({"filename": file, "subfolder": subfolder, "type": "output"})
         counter += 1
+        
     return results
 
 # ==========================================
-# CLASSI NODI (Furrey SuperTools)
+# CLASSI NODI
 # ==========================================
 
 class FurreySimpleText:
@@ -163,7 +159,7 @@ class FurreyAllInOne:
         latent = {"samples": torch.zeros([1, 4, kwargs['height'] // 8, kwargs['width'] // 8])}
         res = nodes.common_ksampler(kwargs['model'], kwargs['seed'], kwargs['steps'], kwargs['cfg'], kwargs['sampler_name'], kwargs['scheduler'], kwargs['positive'], kwargs['negative'], latent, kwargs['denoise'])[0]
         pix = kwargs['vae'].decode(res["samples"])
-        save_furrey_logic(pix, kwargs['filename_prefix'], kwargs.get('prompt'), kwargs.get('extra_pnginfo'), kwargs['positive_text'], kwargs['negative_text'], kwargs['steps'], kwargs['sampler_name'], kwargs['scheduler'], kwargs['cfg'], kwargs['seed'], kwargs['model_name_str'], kwargs['denoise'], "ComfyUI + A1111")
+        save_furrey_logic(pix, kwargs['filename_prefix'], kwargs.get('prompt'), kwargs.get('extra_pnginfo'), kwargs['positive_text'], kwargs['negative_text'], kwargs['steps'], kwargs['sampler_name'], kwargs['scheduler'], kwargs['cfg'], kwargs['seed'], kwargs['model_name_str'], kwargs['denoise'], "ComfyUI + A1111", "")
         return {"ui": {"images": []}, "result": (res,)}
 
 class FurreyHiresFix:
@@ -189,7 +185,7 @@ class FurreyHiresFix:
         s = comfy.utils.common_upscale(samples, w, h, "nearest-exact", "center")
         res = nodes.common_ksampler(kwargs['model'], kwargs['seed'], kwargs['steps'], kwargs['cfg'], kwargs['sampler_name'], kwargs['scheduler'], kwargs['positive'], kwargs['negative'], {"samples": s}, denoise=kwargs['hires_denoise'])[0]
         pix = kwargs['vae'].decode(res["samples"])
-        save_furrey_logic(pix, kwargs['filename_prefix'], kwargs.get('prompt'), kwargs.get('extra_pnginfo'), kwargs['positive_text'], kwargs['negative_text'], kwargs['steps'], kwargs['sampler_name'], kwargs['scheduler'], kwargs['cfg'], kwargs['seed'], kwargs['model_name_str'], kwargs['hires_denoise'], "ComfyUI + A1111")
+        save_furrey_logic(pix, kwargs['filename_prefix'], kwargs.get('prompt'), kwargs.get('extra_pnginfo'), kwargs['positive_text'], kwargs['negative_text'], kwargs['steps'], kwargs['sampler_name'], kwargs['scheduler'], kwargs['cfg'], kwargs['seed'], kwargs['model_name_str'], kwargs['hires_denoise'], "ComfyUI + A1111", "")
         return {"ui": {"images": []}, "result": (res,)}
 
 class FurreySaveImagePlus:
@@ -199,6 +195,7 @@ class FurreySaveImagePlus:
         return {
             "required": {
                 "images": ("IMAGE",),
+                "save_path": ("STRING", {"default": ""}),
                 "filename_prefix": ("STRING", {"default": "FurreyPlus"}),
                 "save_mode": (["ComfyUI + A1111", "A1111 Only", "ComfyUI Only", "No Metadata", "Preview Only"],),
                 "positive": ("STRING", {"forceInput": True}),
@@ -214,16 +211,24 @@ class FurreySaveImagePlus:
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
     RETURN_TYPES = (); FUNCTION = "execute"; OUTPUT_NODE = True; CATEGORY = "Furrey/SuperTools"
+
     def execute(self, images, **kwargs):
         if kwargs['save_mode'] == "Preview Only":
             temp_dir = folder_paths.get_temp_directory()
             results = list()
             for image in images:
                 i = 255. * image.cpu().numpy(); img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
-                file = f"preview_{np.random.randint(1000)}.png"; img.save(os.path.join(temp_dir, file))
+                file = f"preview_{random.randint(0, 99999)}.png"
+                img.save(os.path.join(temp_dir, file))
                 results.append({"filename": file, "subfolder": "", "type": "temp"})
             return {"ui": {"images": results}}
-        results = save_furrey_logic(images, kwargs['filename_prefix'], kwargs.get('prompt'), kwargs.get('extra_pnginfo'), kwargs['positive'], kwargs['negative'], kwargs['steps'], kwargs['sampler_name'], kwargs['scheduler'], kwargs['cfg'], kwargs['seed'], kwargs['model_name'], kwargs['denoise'], kwargs['save_mode'])
+        
+        results = save_furrey_logic(
+            images, kwargs['filename_prefix'], kwargs.get('prompt'), kwargs.get('extra_pnginfo'), 
+            kwargs['positive'], kwargs['negative'], kwargs['steps'], kwargs['sampler_name'], 
+            kwargs['scheduler'], kwargs['cfg'], kwargs['seed'], kwargs['model_name'], 
+            kwargs['denoise'], kwargs['save_mode'], kwargs['save_path']
+        )
         return {"ui": {"images": results}}
 
 # ==========================================
